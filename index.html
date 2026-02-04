@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Bestandsmonitor Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f0f2f5; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
+        h2 { color: #1F4E78; border-bottom: 2px solid #1F4E78; padding-bottom: 10px; }
+        .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        .upload-box { border: 2px dashed #ccc; padding: 15px; border-radius: 8px; text-align: center; background: #fafafa; }
+        .upload-box.active { border-color: #1F4E78; background: #eef6ff; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
+        th { background-color: #1F4E78; color: white; position: sticky; top: 0; }
+        .status-ok { background-color: #d4edda; color: #155724; font-weight: bold; }
+        .status-order { background-color: #f8d7da; color: #721c24; font-weight: bold; }
+        input[type="number"] { width: 70px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+        .hidden { display: none; }
+        .info-text { font-size: 0.85em; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>📦 SAP Bestandsmonitor (Dynamisch)</h2>
+    
+    <div class="upload-section">
+        <div class="upload-box" id="masterBox">
+            <strong>1. Stammdaten (Forráslista)</strong>
+            <input type="file" id="masterFile" accept=".csv">
+            <div class="info-text" id="masterStatus">Keine Stammdaten geladen</div>
+        </div>
+        <div class="upload-box" id="sapBox">
+            <strong>2. SAP Export (Készlet)</strong>
+            <input type="file" id="sapFile" accept=".csv">
+            <div class="info-text">Täglicher Export hier hochladen</div>
+        </div>
+    </div>
+
+    <table id="resultTable" class="hidden">
+        <thead>
+            <tr>
+                <th>Material Nr.</th>
+                <th>Produkt</th>
+                <th>SAP Bestand</th>
+                <th>Verbrauch/Jahr</th>
+                <th>Lieferzeit (T)</th>
+                <th>Meldebestand</th>
+                <th>STATUS</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+</div>
+
+<script>
+    let masterData = JSON.parse(localStorage.getItem('sap_master_list')) || [];
+    let currentStock = {};
+
+    if (masterData.length > 0) {
+        document.getElementById('masterStatus').innerText = `${masterData.length} Produkte geladen`;
+        document.getElementById('resultTable').classList.remove('hidden');
+        renderTable();
+    }
+
+    // 1. Forráslista (Master) feldolgozása
+    document.getElementById('masterFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        Papa.parse(file, {
+            header: true,
+            delimiter: ";",
+            skipEmptyLines: true,
+            complete: function(results) {
+                masterData = results.data.map(row => ({
+                    id: String(row['Material NO'] || "").trim(),
+                    name: row['Product'] || "N/A"
+                })).filter(item => item.id);
+                
+                localStorage.setItem('sap_master_list', JSON.stringify(masterData));
+                document.getElementById('masterStatus').innerText = `${masterData.length} Produkte gespeichert`;
+                document.getElementById('resultTable').classList.remove('hidden');
+                renderTable();
+            }
+        });
+    });
+
+    // 2. SAP Export feldolgozása
+    document.getElementById('sapFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                currentStock = {};
+                results.data.forEach(row => {
+                    const id = String(row.Product || "").split('.')[0].trim();
+                    const qty = parseFloat(row.Quantity) || 0;
+                    if (id) currentStock[id] = (currentStock[id] || 0) + qty;
+                });
+                renderTable();
+            }
+        });
+    });
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        masterData.forEach(item => {
+            const stock = currentStock[item.id] || 0;
+            const usage = localStorage.getItem(`u_${item.id}`) || 0;
+            const lead = localStorage.getItem(`l_${item.id}`) || 0;
+            
+            const daily = usage / 250;
+            const rop = Math.ceil(daily * lead);
+            const needsOrder = stock < rop;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.id}</td>
+                <td>${item.name}</td>
+                <td>${stock.toLocaleString()}</td>
+                <td><input type="number" value="${usage}" onchange="saveVal('${item.id}', 'u', this.value)"></td>
+                <td><input type="number" value="${lead}" onchange="saveVal('${item.id}', 'l', this.value)"></td>
+                <td>${rop}</td>
+                <td class="${needsOrder ? 'status-order' : 'status-ok'}">
+                    ${needsOrder ? 'BESTELLEN' : 'OK'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function saveVal(id, type, val) {
+        localStorage.setItem(`${type}_${id}`, val);
+        renderTable();
+    }
+</script>
+</body>
+</html>
