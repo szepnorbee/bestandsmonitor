@@ -3,26 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Bestandsmonitor v5</title>
+    <title>SAP Bestandsmonitor v7 - Multi-Level Alert</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f7f9; color: #333; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1400px; margin: auto; }
         h2 { color: #1F4E78; border-bottom: 3px solid #1F4E78; padding-bottom: 10px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        
         .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
         .upload-box { border: 2px dashed #1F4E78; padding: 15px; border-radius: 10px; text-align: center; background: #fff; }
-        .btn-export { background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.95em; transition: 0.3s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .btn-export:hover { background-color: #a71d2a; transform: translateY(-1px); }
-        .search-box { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        
+        .btn-export { background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-export:hover { background-color: #a71d2a; }
+        
+        .search-box { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
-        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
         th { background-color: #1F4E78; color: white; position: sticky; top: 0; z-index: 10; }
-        .status-ok { background-color: #d4edda; color: #155724; font-weight: bold; text-align: center; }
-        .status-order { background-color: #f8d7da; color: #721c24; font-weight: bold; text-align: center; animation: blink 2s infinite; }
-        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.7;} 100% {opacity: 1;} }
+        
+        tbody tr { cursor: pointer; transition: 0.2s; }
+        tbody tr:hover { background-color: #e9ecef; }
+        
+        /* Státusz színek */
+        .status-ok { color: #155724; font-weight: bold; background: #d4edda; text-align: center; border-radius: 4px; }
+        .status-warn { color: #856404; font-weight: bold; background: #fff3cd; text-align: center; border-radius: 4px; }
+        .status-order { color: #721c24; font-weight: bold; background: #f8d7da; text-align: center; animation: blink 2s infinite; border-radius: 4px; }
+        
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.8;} 100% {opacity: 1;} }
+        
         input[type="number"] { width: 85px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
-        .summary-bar { display: flex; gap: 20px; margin-bottom: 15px; font-weight: bold; }
+
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 10% auto; padding: 25px; border-radius: 12px; width: 60%; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: black; }
+
+        .summary-bar { display: flex; gap: 30px; margin-bottom: 15px; font-weight: bold; font-size: 1rem; }
         .hidden { display: none; }
     </style>
 </head>
@@ -30,13 +48,14 @@
 
 <div class="card">
     <h2>
-        <span>📦 SAP Bestandsverwaltung</span>
-        <button id="exportBtn" class="btn-export hidden" onclick="exportToExcel()">⚠️ Nur Bestellliste exportieren (Excel)</button>
+        <span>📦 SAP Bestandsmonitor (v7 - Multi-Alert)</span>
+        <button id="exportBtn" class="btn-export hidden" onclick="exportToExcel()">⚠️ Bestellliste exportieren</button>
     </h2>
     
-    <div class="summary-bar">
+    <div class="summary-bar" id="summaryContainer">
         <span id="totalItems" style="color: #1F4E78;">Produkte: 0</span>
-        <span id="criticalItems" style="color: #dc3545;">Kritisch (Bestellen): 0</span>
+        <span id="criticalItems" style="color: #dc3545;">🚨 Kritisch: 0</span>
+        <span id="warningItems" style="color: #856404;">⏳ Warnung: 0</span>
     </div>
 
     <div class="upload-section">
@@ -50,7 +69,7 @@
         </div>
     </div>
 
-    <input type="text" id="searchInput" class="search-box hidden" placeholder="Suche nach Material Nr. oder Produkt..." onkeyup="filterTable()">
+    <input type="text" id="searchInput" class="search-box hidden" placeholder="Suche... (Tipp: Zeile anklicken für Lagerplatz-Details)">
 
     <table id="resultTable" class="hidden">
         <thead>
@@ -69,11 +88,31 @@
     </table>
 </div>
 
+<div id="detailModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modalTitle">Lagerplatz-Details</h3>
+        <table style="width:100%; margin-top:15px;">
+            <thead>
+                <tr>
+                    <th>Storage Bin</th>
+                    <th>Batch</th>
+                    <th>Menge</th>
+                </tr>
+            </thead>
+            <tbody id="modalBody"></tbody>
+        </table>
+    </div>
+</div>
+
 <script>
     const DEFAULT_SAFETY_STOCK = 3000;
     const DEFAULT_LEAD_TIME = 60;
-    let masterData = JSON.parse(localStorage.getItem('sap_master_v5')) || [];
-    let currentStock = {};
+    const WARNING_BUFFER = 1.2; // 20% puffer a sárga zónához
+
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v7')) || [];
+    let stockSummary = {};
+    let stockDetails = {};
 
     if (masterData.length > 0) {
         document.getElementById('resultTable').classList.remove('hidden');
@@ -92,7 +131,7 @@
                     if (id) grouped[id] = row['Product'] || "N/A";
                 });
                 masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
-                localStorage.setItem('sap_master_v5', JSON.stringify(masterData));
+                localStorage.setItem('sap_master_v7', JSON.stringify(masterData));
                 location.reload();
             }
         });
@@ -102,11 +141,15 @@
         Papa.parse(e.target.files[0], {
             header: true, skipEmptyLines: true,
             complete: function(results) {
-                currentStock = {};
+                stockSummary = {}; stockDetails = {};
                 results.data.forEach(row => {
                     const id = String(row.Product || "").split('.')[0].trim();
                     const qty = parseFloat(row.Quantity) || 0;
-                    if (id) currentStock[id] = (currentStock[id] || 0) + qty;
+                    if (id) {
+                        stockSummary[id] = (stockSummary[id] || 0) + qty;
+                        if (!stockDetails[id]) stockDetails[id] = [];
+                        stockDetails[id].push({ bin: row['Storage Bin'] || "N/A", batch: row['Batch'] || "N/A", qty: qty });
+                    }
                 });
                 renderTable();
             }
@@ -117,91 +160,91 @@
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
         let criticalCount = 0;
+        let warningCount = 0;
 
         masterData.forEach(item => {
-            const stock = currentStock[item.id] || 0;
+            const stock = stockSummary[item.id] || 0;
             const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
             const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
             const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
             
             const rop = Math.ceil(((usage / 250) * lead) + safety);
-            const isLow = stock < rop;
-            if (isLow) criticalCount++;
+            
+            let statusText = "✅ OK";
+            let statusClass = "status-ok";
+
+            if (stock < rop) {
+                statusText = "🚨 BESTELLEN";
+                statusClass = "status-order";
+                criticalCount++;
+            } else if (stock < (rop * WARNING_BUFFER)) {
+                statusText = "⏳ WARNUNG";
+                statusClass = "status-warn";
+                warningCount++;
+            }
 
             const tr = document.createElement('tr');
+            tr.onclick = () => showDetails(item.id, item.name);
             tr.innerHTML = `
                 <td>${item.id}</td>
                 <td>${item.name}</td>
                 <td style="font-weight:bold">${stock.toLocaleString()}</td>
-                <td><input type="number" value="${usage}" onchange="save('${item.id}', 'u', this.value)"></td>
-                <td><input type="number" value="${lead}" onchange="save('${item.id}', 'l', this.value)"></td>
-                <td><input type="number" value="${safety}" onchange="save('${item.id}', 's', this.value)"></td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${usage}" onchange="save('${item.id}', 'u', this.value)"></td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${lead}" onchange="save('${item.id}', 'l', this.value)"></td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${safety}" onchange="save('${item.id}', 's', this.value)"></td>
                 <td style="background:#f8f9fa">${rop.toLocaleString()}</td>
-                <td class="${isLow ? 'status-order' : 'status-ok'}">${isLow ? '⚠️ BESTELLEN' : '✅ OK'}</td>
+                <td class="${statusClass}">${statusText}</td>
             `;
             tbody.appendChild(tr);
         });
+
         document.getElementById('totalItems').innerText = `Produkte: ${masterData.length}`;
-        document.getElementById('criticalItems').innerText = `Kritisch (Bestellen): ${criticalCount}`;
+        document.getElementById('criticalItems').innerText = `🚨 Kritisch: ${criticalCount}`;
+        document.getElementById('warningItems').innerText = `⏳ Warnung: ${warningCount}`;
     }
 
+    function showDetails(id, name) {
+        const details = stockDetails[id] || [];
+        const modal = document.getElementById('detailModal');
+        const modalBody = document.getElementById('modalBody');
+        document.getElementById('modalTitle').innerText = `Lagerdetails: ${id} - ${name}`;
+        modalBody.innerHTML = details.length ? '' : '<tr><td colspan="3">Kein Bestand.</td></tr>';
+        details.sort((a,b) => b.qty - a.qty).forEach(d => {
+            modalBody.innerHTML += `<tr><td>${d.bin}</td><td>${d.batch}</td><td>${d.qty.toLocaleString()}</td></tr>`;
+        });
+        modal.style.display = "block";
+    }
+
+    function closeModal() { document.getElementById('detailModal').style.display = "none"; }
+    window.onclick = (e) => { if (e.target.className === 'modal') closeModal(); }
+    
     function save(id, key, val) {
         localStorage.setItem(`${key}_${id}`, val);
         renderTable();
     }
 
-    function filterTable() {
-        const input = document.getElementById('searchInput').value.toUpperCase();
-        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-        for (let i = 0; i < rows.length; i++) {
-            const txt = rows[i].textContent || rows[i].innerText;
-            rows[i].style.display = txt.toUpperCase().indexOf(input) > -1 ? "" : "none";
-        }
-    }
+    document.getElementById('searchInput').addEventListener('keyup', function() {
+        const val = this.value.toUpperCase();
+        const rows = document.querySelectorAll('#tableBody tr');
+        rows.forEach(r => r.style.display = r.innerText.toUpperCase().includes(val) ? '' : 'none');
+    });
 
     function exportToExcel() {
-        // Csak a rendelendő tételek szűrése
-        const orderList = masterData.map(item => {
-            const stock = currentStock[item.id] || 0;
+        const list = masterData.map(item => {
+            const stock = stockSummary[item.id] || 0;
             const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
             const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
             const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
             const rop = Math.ceil(((usage / 250) * lead) + safety);
-            
-            return {
-                id: item.id,
-                name: item.name,
-                stock: stock,
-                usage: usage,
-                lead: lead,
-                safety: safety,
-                rop: rop,
-                isLow: stock < rop
-            };
-        }).filter(row => row.isLow); // ITT TÖRTÉNIK A SZŰRÉS
+            return { id: item.id, name: item.name, stock, rop, isLow: stock < rop };
+        }).filter(r => r.isLow);
 
-        if (orderList.length === 0) {
-            alert("Es gibt keine Produkte, die bestellt werden müssen.");
-            return;
-        }
-
-        const excelData = orderList.map(row => ({
-            "Material Nr.": row.id,
-            "Produkt": row.name,
-            "Aktueller Bestand": row.stock,
-            "Meldebestand (ROP)": row.rop,
-            "Differenz (Fehlmenge)": row.rop - row.stock,
-            "Status": "BESTELLEN"
-        }));
-
-        const ws = XLSX.utils.json_to_sheet(excelData);
+        if (!list.length) return alert("Nichts zu bestellen!");
+        const ws = XLSX.utils.json_to_sheet(list.map(r => ({ "ID": r.id, "Produkt": r.name, "Bestand": r.stock, "Bedarf": r.rop - r.stock })));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Bestellliste");
-        
-        const timestamp = new Date().toISOString().slice(0, 10);
-        XLSX.writeFile(wb, `SAP_Bestellliste_${timestamp}.xlsx`);
+        XLSX.writeFile(wb, `Bestellliste_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
 </script>
-
 </body>
 </html>
