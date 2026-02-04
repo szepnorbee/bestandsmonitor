@@ -3,52 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Bestandsmonitor Pro</title>
+    <title>SAP Bestandsmonitor v5</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f0f2f5; color: #333; }
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
-        h2 { color: #1F4E78; border-bottom: 2px solid #1F4E78; padding-bottom: 10px; }
-        .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
-        .upload-box { border: 2px dashed #ccc; padding: 15px; border-radius: 8px; text-align: center; background: #fafafa; }
-        .upload-box.active { border-color: #1F4E78; background: #eef6ff; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f7f9; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1400px; margin: auto; }
+        h2 { color: #1F4E78; border-bottom: 3px solid #1F4E78; padding-bottom: 10px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .upload-box { border: 2px dashed #1F4E78; padding: 15px; border-radius: 10px; text-align: center; background: #fff; }
+        .btn-export { background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.95em; transition: 0.3s; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .btn-export:hover { background-color: #a71d2a; transform: translateY(-1px); }
+        .search-box { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
         th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; }
-        th { background-color: #1F4E78; color: white; position: sticky; top: 0; }
-        .status-ok { background-color: #d4edda; color: #155724; font-weight: bold; }
-        .status-order { background-color: #f8d7da; color: #721c24; font-weight: bold; }
-        input[type="number"] { width: 70px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+        th { background-color: #1F4E78; color: white; position: sticky; top: 0; z-index: 10; }
+        .status-ok { background-color: #d4edda; color: #155724; font-weight: bold; text-align: center; }
+        .status-order { background-color: #f8d7da; color: #721c24; font-weight: bold; text-align: center; animation: blink 2s infinite; }
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.7;} 100% {opacity: 1;} }
+        input[type="number"] { width: 85px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+        .summary-bar { display: flex; gap: 20px; margin-bottom: 15px; font-weight: bold; }
         .hidden { display: none; }
-        .info-text { font-size: 0.85em; color: #666; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>📦 SAP Bestandsmonitor (Dynamisch)</h2>
+    <h2>
+        <span>📦 SAP Bestandsverwaltung</span>
+        <button id="exportBtn" class="btn-export hidden" onclick="exportToExcel()">⚠️ Nur Bestellliste exportieren (Excel)</button>
+    </h2>
     
+    <div class="summary-bar">
+        <span id="totalItems" style="color: #1F4E78;">Produkte: 0</span>
+        <span id="criticalItems" style="color: #dc3545;">Kritisch (Bestellen): 0</span>
+    </div>
+
     <div class="upload-section">
-        <div class="upload-box" id="masterBox">
-            <strong>1. Stammdaten (Forráslista)</strong>
+        <div class="upload-box">
+            <strong>1. Stammdaten (Forráslista)</strong><br><br>
             <input type="file" id="masterFile" accept=".csv">
-            <div class="info-text" id="masterStatus">Keine Stammdaten geladen</div>
         </div>
-        <div class="upload-box" id="sapBox">
-            <strong>2. SAP Export (Készlet)</strong>
+        <div class="upload-box">
+            <strong>2. SAP Lagerbestand (Export)</strong><br><br>
             <input type="file" id="sapFile" accept=".csv">
-            <div class="info-text">Täglicher Export hier hochladen</div>
         </div>
     </div>
+
+    <input type="text" id="searchInput" class="search-box hidden" placeholder="Suche nach Material Nr. oder Produkt..." onkeyup="filterTable()">
 
     <table id="resultTable" class="hidden">
         <thead>
             <tr>
                 <th>Material Nr.</th>
                 <th>Produkt</th>
-                <th>SAP Bestand</th>
+                <th>Bestand (SAP)</th>
                 <th>Verbrauch/Jahr</th>
                 <th>Lieferzeit (T)</th>
-                <th>Meldebestand</th>
+                <th>Sicherheitsbest.</th>
+                <th>Meldebestand (ROP)</th>
                 <th>STATUS</th>
             </tr>
         </thead>
@@ -57,42 +70,37 @@
 </div>
 
 <script>
-    let masterData = JSON.parse(localStorage.getItem('sap_master_list')) || [];
+    const DEFAULT_SAFETY_STOCK = 3000;
+    const DEFAULT_LEAD_TIME = 60;
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v5')) || [];
     let currentStock = {};
 
     if (masterData.length > 0) {
-        document.getElementById('masterStatus').innerText = `${masterData.length} Produkte geladen`;
         document.getElementById('resultTable').classList.remove('hidden');
+        document.getElementById('exportBtn').classList.remove('hidden');
+        document.getElementById('searchInput').classList.remove('hidden');
         renderTable();
     }
 
-    // 1. Forráslista (Master) feldolgozása
     document.getElementById('masterFile').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        Papa.parse(file, {
-            header: true,
-            delimiter: ";",
-            skipEmptyLines: true,
+        Papa.parse(e.target.files[0], {
+            header: true, delimiter: ";", skipEmptyLines: true,
             complete: function(results) {
-                masterData = results.data.map(row => ({
-                    id: String(row['Material NO'] || "").trim(),
-                    name: row['Product'] || "N/A"
-                })).filter(item => item.id);
-                
-                localStorage.setItem('sap_master_list', JSON.stringify(masterData));
-                document.getElementById('masterStatus').innerText = `${masterData.length} Produkte gespeichert`;
-                document.getElementById('resultTable').classList.remove('hidden');
-                renderTable();
+                const grouped = {};
+                results.data.forEach(row => {
+                    const id = String(row['Material NO'] || "").trim();
+                    if (id) grouped[id] = row['Product'] || "N/A";
+                });
+                masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
+                localStorage.setItem('sap_master_v5', JSON.stringify(masterData));
+                location.reload();
             }
         });
     });
 
-    // 2. SAP Export feldolgozása
     document.getElementById('sapFile').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        Papa.parse(file, {
-            header: true,
-            skipEmptyLines: true,
+        Papa.parse(e.target.files[0], {
+            header: true, skipEmptyLines: true,
             complete: function(results) {
                 currentStock = {};
                 results.data.forEach(row => {
@@ -108,36 +116,92 @@
     function renderTable() {
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
+        let criticalCount = 0;
 
         masterData.forEach(item => {
             const stock = currentStock[item.id] || 0;
-            const usage = localStorage.getItem(`u_${item.id}`) || 0;
-            const lead = localStorage.getItem(`l_${item.id}`) || 0;
+            const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
+            const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
+            const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
             
-            const daily = usage / 250;
-            const rop = Math.ceil(daily * lead);
-            const needsOrder = stock < rop;
+            const rop = Math.ceil(((usage / 250) * lead) + safety);
+            const isLow = stock < rop;
+            if (isLow) criticalCount++;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${item.id}</td>
                 <td>${item.name}</td>
-                <td>${stock.toLocaleString()}</td>
-                <td><input type="number" value="${usage}" onchange="saveVal('${item.id}', 'u', this.value)"></td>
-                <td><input type="number" value="${lead}" onchange="saveVal('${item.id}', 'l', this.value)"></td>
-                <td>${rop}</td>
-                <td class="${needsOrder ? 'status-order' : 'status-ok'}">
-                    ${needsOrder ? 'BESTELLEN' : 'OK'}
-                </td>
+                <td style="font-weight:bold">${stock.toLocaleString()}</td>
+                <td><input type="number" value="${usage}" onchange="save('${item.id}', 'u', this.value)"></td>
+                <td><input type="number" value="${lead}" onchange="save('${item.id}', 'l', this.value)"></td>
+                <td><input type="number" value="${safety}" onchange="save('${item.id}', 's', this.value)"></td>
+                <td style="background:#f8f9fa">${rop.toLocaleString()}</td>
+                <td class="${isLow ? 'status-order' : 'status-ok'}">${isLow ? '⚠️ BESTELLEN' : '✅ OK'}</td>
             `;
             tbody.appendChild(tr);
         });
+        document.getElementById('totalItems').innerText = `Produkte: ${masterData.length}`;
+        document.getElementById('criticalItems').innerText = `Kritisch (Bestellen): ${criticalCount}`;
     }
 
-    function saveVal(id, type, val) {
-        localStorage.setItem(`${type}_${id}`, val);
+    function save(id, key, val) {
+        localStorage.setItem(`${key}_${id}`, val);
         renderTable();
     }
+
+    function filterTable() {
+        const input = document.getElementById('searchInput').value.toUpperCase();
+        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+        for (let i = 0; i < rows.length; i++) {
+            const txt = rows[i].textContent || rows[i].innerText;
+            rows[i].style.display = txt.toUpperCase().indexOf(input) > -1 ? "" : "none";
+        }
+    }
+
+    function exportToExcel() {
+        // Csak a rendelendő tételek szűrése
+        const orderList = masterData.map(item => {
+            const stock = currentStock[item.id] || 0;
+            const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
+            const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
+            const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
+            const rop = Math.ceil(((usage / 250) * lead) + safety);
+            
+            return {
+                id: item.id,
+                name: item.name,
+                stock: stock,
+                usage: usage,
+                lead: lead,
+                safety: safety,
+                rop: rop,
+                isLow: stock < rop
+            };
+        }).filter(row => row.isLow); // ITT TÖRTÉNIK A SZŰRÉS
+
+        if (orderList.length === 0) {
+            alert("Es gibt keine Produkte, die bestellt werden müssen.");
+            return;
+        }
+
+        const excelData = orderList.map(row => ({
+            "Material Nr.": row.id,
+            "Produkt": row.name,
+            "Aktueller Bestand": row.stock,
+            "Meldebestand (ROP)": row.rop,
+            "Differenz (Fehlmenge)": row.rop - row.stock,
+            "Status": "BESTELLEN"
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Bestellliste");
+        
+        const timestamp = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `SAP_Bestellliste_${timestamp}.xlsx`);
+    }
 </script>
+
 </body>
 </html>
