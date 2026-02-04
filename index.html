@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Bestandsmonitor v7 - Multi-Level Alert</title>
+    <title>SAP Bestandsmonitor v8 - Forecast Chart</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f7f9; color: #333; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1400px; margin: auto; }
@@ -17,8 +18,6 @@
         .btn-export { background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-export:hover { background-color: #a71d2a; }
         
-        .search-box { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
-        
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
         th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
         th { background-color: #1F4E78; color: white; position: sticky; top: 0; z-index: 10; }
@@ -26,21 +25,28 @@
         tbody tr { cursor: pointer; transition: 0.2s; }
         tbody tr:hover { background-color: #e9ecef; }
         
-        /* Státusz színek */
+        /* Material Nr. kiemelése a hover jelzéshez */
+        .mat-nr-cell { color: #1F4E78; font-weight: bold; text-decoration: underline; cursor: help; }
+
         .status-ok { color: #155724; font-weight: bold; background: #d4edda; text-align: center; border-radius: 4px; }
         .status-warn { color: #856404; font-weight: bold; background: #fff3cd; text-align: center; border-radius: 4px; }
         .status-order { color: #721c24; font-weight: bold; background: #f8d7da; text-align: center; animation: blink 2s infinite; border-radius: 4px; }
         
         @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.8;} 100% {opacity: 1;} }
-        
         input[type="number"] { width: 85px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+
+        /* Lebegő diagram stílusa */
+        #chartTooltip {
+            position: absolute; display: none; width: 320px; height: 200px;
+            background: white; border: 2px solid #1F4E78; border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 1000; pointer-events: none; padding: 10px;
+        }
 
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
         .modal-content { background-color: white; margin: 10% auto; padding: 25px; border-radius: 12px; width: 60%; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
-        .close:hover { color: black; }
 
-        .summary-bar { display: flex; gap: 30px; margin-bottom: 15px; font-weight: bold; font-size: 1rem; }
+        .summary-bar { display: flex; gap: 30px; margin-bottom: 15px; font-weight: bold; }
         .hidden { display: none; }
     </style>
 </head>
@@ -48,28 +54,20 @@
 
 <div class="card">
     <h2>
-        <span>📦 SAP Bestandsmonitor (v7 - Multi-Alert)</span>
+        <span>📦 SAP Bestandsmonitor v8</span>
         <button id="exportBtn" class="btn-export hidden" onclick="exportToExcel()">⚠️ Bestellliste exportieren</button>
     </h2>
     
-    <div class="summary-bar" id="summaryContainer">
+    <div class="summary-bar">
         <span id="totalItems" style="color: #1F4E78;">Produkte: 0</span>
         <span id="criticalItems" style="color: #dc3545;">🚨 Kritisch: 0</span>
         <span id="warningItems" style="color: #856404;">⏳ Warnung: 0</span>
     </div>
 
     <div class="upload-section">
-        <div class="upload-box">
-            <strong>1. Stammdaten (Forráslista)</strong><br><br>
-            <input type="file" id="masterFile" accept=".csv">
-        </div>
-        <div class="upload-box">
-            <strong>2. SAP Lagerbestand (Export)</strong><br><br>
-            <input type="file" id="sapFile" accept=".csv">
-        </div>
+        <div class="upload-box"><strong>1. Stammdaten</strong><br><input type="file" id="masterFile" accept=".csv"></div>
+        <div class="upload-box"><strong>2. SAP Lagerbestand</strong><br><input type="file" id="sapFile" accept=".csv"></div>
     </div>
-
-    <input type="text" id="searchInput" class="search-box hidden" placeholder="Suche... (Tipp: Zeile anklicken für Lagerplatz-Details)">
 
     <table id="resultTable" class="hidden">
         <thead>
@@ -88,105 +86,71 @@
     </table>
 </div>
 
+<div id="chartTooltip"><canvas id="forecastChart"></canvas></div>
+
 <div id="detailModal" class="modal">
     <div class="modal-content">
         <span class="close" onclick="closeModal()">&times;</span>
         <h3 id="modalTitle">Lagerplatz-Details</h3>
         <table style="width:100%; margin-top:15px;">
-            <thead>
-                <tr>
-                    <th>Storage Bin</th>
-                    <th>Batch</th>
-                    <th>Menge</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Storage Bin</th><th>Batch</th><th>Menge</th></tr></thead>
             <tbody id="modalBody"></tbody>
         </table>
     </div>
 </div>
 
 <script>
-    const DEFAULT_SAFETY_STOCK = 3000;
-    const DEFAULT_LEAD_TIME = 60;
-    const WARNING_BUFFER = 1.2; // 20% puffer a sárga zónához
+    const DEFAULT_SAFETY_STOCK = 3000, DEFAULT_LEAD_TIME = 60, WARNING_BUFFER = 1.2;
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v8')) || [];
+    let stockSummary = {}, stockDetails = {}, myChart = null;
 
-    let masterData = JSON.parse(localStorage.getItem('sap_master_v7')) || [];
-    let stockSummary = {};
-    let stockDetails = {};
-
-    if (masterData.length > 0) {
-        document.getElementById('resultTable').classList.remove('hidden');
-        document.getElementById('exportBtn').classList.remove('hidden');
-        document.getElementById('searchInput').classList.remove('hidden');
-        renderTable();
-    }
+    if (masterData.length > 0) { document.getElementById('resultTable').classList.remove('hidden'); document.getElementById('exportBtn').classList.remove('hidden'); renderTable(); }
 
     document.getElementById('masterFile').addEventListener('change', function(e) {
-        Papa.parse(e.target.files[0], {
-            header: true, delimiter: ";", skipEmptyLines: true,
-            complete: function(results) {
-                const grouped = {};
-                results.data.forEach(row => {
-                    const id = String(row['Material NO'] || "").trim();
-                    if (id) grouped[id] = row['Product'] || "N/A";
-                });
-                masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
-                localStorage.setItem('sap_master_v7', JSON.stringify(masterData));
-                location.reload();
-            }
-        });
+        Papa.parse(e.target.files[0], { header: true, delimiter: ";", skipEmptyLines: true, complete: function(results) {
+            const grouped = {}; results.data.forEach(row => { const id = String(row['Material NO']||"").trim(); if (id) grouped[id] = row['Product']||"N/A"; });
+            masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
+            localStorage.setItem('sap_master_v8', JSON.stringify(masterData)); location.reload();
+        }});
     });
 
     document.getElementById('sapFile').addEventListener('change', function(e) {
-        Papa.parse(e.target.files[0], {
-            header: true, skipEmptyLines: true,
-            complete: function(results) {
-                stockSummary = {}; stockDetails = {};
-                results.data.forEach(row => {
-                    const id = String(row.Product || "").split('.')[0].trim();
-                    const qty = parseFloat(row.Quantity) || 0;
-                    if (id) {
-                        stockSummary[id] = (stockSummary[id] || 0) + qty;
-                        if (!stockDetails[id]) stockDetails[id] = [];
-                        stockDetails[id].push({ bin: row['Storage Bin'] || "N/A", batch: row['Batch'] || "N/A", qty: qty });
-                    }
-                });
-                renderTable();
-            }
-        });
+        Papa.parse(e.target.files[0], { header: true, skipEmptyLines: true, complete: function(results) {
+            stockSummary = {}; stockDetails = {};
+            results.data.forEach(row => {
+                const id = String(row.Product || "").split('.')[0].trim();
+                const qty = parseFloat(row.Quantity) || 0;
+                if (id) {
+                    stockSummary[id] = (stockSummary[id] || 0) + qty;
+                    if (!stockDetails[id]) stockDetails[id] = [];
+                    stockDetails[id].push({ bin: row['Storage Bin'] || "N/A", batch: row['Batch'] || "N/A", qty: qty });
+                }
+            });
+            renderTable();
+        }});
     });
 
     function renderTable() {
-        const tbody = document.getElementById('tableBody');
-        tbody.innerHTML = '';
-        let criticalCount = 0;
-        let warningCount = 0;
+        const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
+        let criticalCount = 0, warningCount = 0;
 
         masterData.forEach(item => {
             const stock = stockSummary[item.id] || 0;
             const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
             const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
             const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
-            
             const rop = Math.ceil(((usage / 250) * lead) + safety);
             
-            let statusText = "✅ OK";
-            let statusClass = "status-ok";
-
-            if (stock < rop) {
-                statusText = "🚨 BESTELLEN";
-                statusClass = "status-order";
-                criticalCount++;
-            } else if (stock < (rop * WARNING_BUFFER)) {
-                statusText = "⏳ WARNUNG";
-                statusClass = "status-warn";
-                warningCount++;
-            }
+            let statusText = "✅ OK", statusClass = "status-ok";
+            if (stock < rop) { statusText = "🚨 BESTELLEN"; statusClass = "status-order"; criticalCount++; }
+            else if (stock < (rop * WARNING_BUFFER)) { statusText = "⏳ WARNUNG"; statusClass = "status-warn"; warningCount++; }
 
             const tr = document.createElement('tr');
             tr.onclick = () => showDetails(item.id, item.name);
             tr.innerHTML = `
-                <td>${item.id}</td>
+                <td class="mat-nr-cell" onmouseover="showChart(event, '${item.id}', '${item.name}', ${stock}, ${usage})" onmouseout="hideChart()">
+                    ${item.id}
+                </td>
                 <td>${item.name}</td>
                 <td style="font-weight:bold">${stock.toLocaleString()}</td>
                 <td onclick="event.stopPropagation()"><input type="number" value="${usage}" onchange="save('${item.id}', 'u', this.value)"></td>
@@ -197,17 +161,56 @@
             `;
             tbody.appendChild(tr);
         });
-
         document.getElementById('totalItems').innerText = `Produkte: ${masterData.length}`;
         document.getElementById('criticalItems').innerText = `🚨 Kritisch: ${criticalCount}`;
         document.getElementById('warningItems').innerText = `⏳ Warnung: ${warningCount}`;
     }
 
+    // Előrejelzés diagram logika
+    function showChart(e, id, name, stock, annualUsage) {
+        const tooltip = document.getElementById('chartTooltip');
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.pageX + 20) + 'px';
+        tooltip.style.top = (e.pageY - 100) + 'px';
+
+        const labels = ['Heute', '1 Mo', '2 Mo', '3 Mo', '4 Mo', '5 Mo', '6 Mo'];
+        const dailyUsage = annualUsage / 250;
+        const workDaysPerMonth = 21;
+        
+        const dataPoints = labels.map((_, i) => {
+            let val = stock - (dailyUsage * workDaysPerMonth * i);
+            return val < 0 ? 0 : Math.round(val);
+        });
+
+        if (myChart) myChart.destroy();
+        const ctx = document.getElementById('forecastChart').getContext('2d');
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Voraussichtlicher Bestand',
+                    data: dataPoints,
+                    borderColor: '#1F4E78',
+                    backgroundColor: 'rgba(31, 78, 120, 0.1)',
+                    fill: true, tension: 0.3, pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: true, text: '6-Monate Forecast', font: {size: 10} } },
+                scales: { y: { beginAtZero: true, ticks: { font: {size: 9} } }, x: { ticks: { font: {size: 9} } } }
+            }
+        });
+    }
+
+    function hideChart() { document.getElementById('chartTooltip').style.display = 'none'; }
+
     function showDetails(id, name) {
         const details = stockDetails[id] || [];
         const modal = document.getElementById('detailModal');
+        document.getElementById('modalTitle').innerText = `Details: ${name}`;
         const modalBody = document.getElementById('modalBody');
-        document.getElementById('modalTitle').innerText = `Lagerdetails: ${id} - ${name}`;
         modalBody.innerHTML = details.length ? '' : '<tr><td colspan="3">Kein Bestand.</td></tr>';
         details.sort((a,b) => b.qty - a.qty).forEach(d => {
             modalBody.innerHTML += `<tr><td>${d.bin}</td><td>${d.batch}</td><td>${d.qty.toLocaleString()}</td></tr>`;
@@ -217,17 +220,7 @@
 
     function closeModal() { document.getElementById('detailModal').style.display = "none"; }
     window.onclick = (e) => { if (e.target.className === 'modal') closeModal(); }
-    
-    function save(id, key, val) {
-        localStorage.setItem(`${key}_${id}`, val);
-        renderTable();
-    }
-
-    document.getElementById('searchInput').addEventListener('keyup', function() {
-        const val = this.value.toUpperCase();
-        const rows = document.querySelectorAll('#tableBody tr');
-        rows.forEach(r => r.style.display = r.innerText.toUpperCase().includes(val) ? '' : 'none');
-    });
+    function save(id, key, val) { localStorage.setItem(`${key}_${id}`, val); renderTable(); }
 
     function exportToExcel() {
         const list = masterData.map(item => {
@@ -238,7 +231,6 @@
             const rop = Math.ceil(((usage / 250) * lead) + safety);
             return { id: item.id, name: item.name, stock, rop, isLow: stock < rop };
         }).filter(r => r.isLow);
-
         if (!list.length) return alert("Nichts zu bestellen!");
         const ws = XLSX.utils.json_to_sheet(list.map(r => ({ "ID": r.id, "Produkt": r.name, "Bestand": r.stock, "Bedarf": r.rop - r.stock })));
         const wb = XLSX.utils.book_new();
