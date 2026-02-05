@@ -1,233 +1,242 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
-    <title>ZE500 Live Offset Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Bestandsmonitor v8 - Forecast Chart</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root {
-            --primary-color: #2ecc71;
-            --danger-color: #e74c3c;
-            --bg-color: #2c3e50;
-            --card-bg: #ecf0f1;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            padding: 10px;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 420px;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            text-align: center;
-        }
-
-        .config-box { margin-bottom: 20px; padding: 10px; background: #fff; border-radius: 10px; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f7f9; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1400px; margin: auto; }
+        h2 { color: #1F4E78; border-bottom: 3px solid #1F4E78; padding-bottom: 10px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
         
-        input[type="text"] {
-            width: 90%;
-            padding: 10px;
-            border: 2px solid #bdc3c7;
-            border-radius: 5px;
-            font-size: 1.1rem;
-            text-align: center;
+        .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .upload-box { border: 2px dashed #1F4E78; padding: 15px; border-radius: 10px; text-align: center; background: #fff; }
+        
+        .btn-export { background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-export:hover { background-color: #a71d2a; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #1F4E78; color: white; position: sticky; top: 0; z-index: 10; }
+        
+        tbody tr { cursor: pointer; transition: 0.2s; }
+        tbody tr:hover { background-color: #e9ecef; }
+        
+        /* Material Nr. kiemelése a hover jelzéshez */
+        .mat-nr-cell { color: #1F4E78; font-weight: bold; text-decoration: underline; cursor: help; }
+
+        .status-ok { color: #155724; font-weight: bold; background: #d4edda; text-align: center; border-radius: 4px; }
+        .status-warn { color: #856404; font-weight: bold; background: #fff3cd; text-align: center; border-radius: 4px; }
+        .status-order { color: #721c24; font-weight: bold; background: #f8d7da; text-align: center; animation: blink 2s infinite; border-radius: 4px; }
+        
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.8;} 100% {opacity: 1;} }
+        input[type="number"] { width: 85px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+
+        /* Lebegő diagram stílusa */
+        #chartTooltip {
+            position: absolute; display: none; width: 320px; height: 200px;
+            background: white; border: 2px solid #1F4E78; border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 1000; pointer-events: none; padding: 10px;
         }
 
-        .switch-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-            margin: 15px 0;
-            font-weight: bold;
-            color: #34495e;
-        }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 10% auto; padding: 25px; border-radius: 12px; width: 60%; box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
 
-        /* D-PAD */
-        .d-pad {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin: 20px auto;
-            width: 260px;
-        }
-
-        .btn {
-            height: 80px;
-            background: #34495e;
-            color: white;
-            border: none;
-            border-radius: 15px;
-            font-size: 2rem;
-            cursor: pointer;
-            box-shadow: 0 5px 0 #2c3e50;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: 0.1s;
-        }
-
-        .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2c3e50; background: var(--primary-color); }
-
-        .info-display {
-            background: #34495e;
-            color: #fff;
-            border-radius: 10px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            font-family: 'Courier New', monospace;
-            font-size: 1.1rem;
-        }
-
-        .status-msg { height: 25px; margin-top: 10px; font-weight: bold; color: #7f8c8d; }
-
-        /* Toggle Switch */
-        .switch { position: relative; display: inline-block; width: 60px; height: 30px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-        .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider { background-color: var(--primary-color); }
-        input:checked + .slider:before { transform: translateX(30px); }
-
-        .reset-btn {
-            width: 100%;
-            padding: 15px;
-            margin-top: 15px;
-            background: var(--danger-color);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-weight: bold;
-            cursor: pointer;
-        }
+        .summary-bar { display: flex; gap: 30px; margin-bottom: 15px; font-weight: bold; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="config-box">
-        <label>Printer IP Address</label><br>
-        <input type="text" id="ipInput" placeholder="192.168.1.100" onchange="saveConfig()">
+<div class="card">
+    <h2>
+        <span>📦 SAP Bestandsmonitor v8</span>
+        <button id="exportBtn" class="btn-export hidden" onclick="exportToExcel()">⚠️ Bestellliste exportieren</button>
+    </h2>
+    
+    <div class="summary-bar">
+        <span id="totalItems" style="color: #1F4E78;">Produkte: 0</span>
+        <span id="criticalItems" style="color: #dc3545;">🚨 Kritisch: 0</span>
+        <span id="warningItems" style="color: #856404;">⏳ Warnung: 0</span>
     </div>
 
-    <div class="switch-container">
-        <span>Keyboard Control</span>
-        <label class="switch">
-            <input type="checkbox" id="kbToggle">
-            <span class="slider"></span>
-        </label>
+    <div class="upload-section">
+        <div class="upload-box"><strong>1. Stammdaten</strong><br><input type="file" id="masterFile" accept=".csv"></div>
+        <div class="upload-box"><strong>2. SAP Lagerbestand</strong><br><input type="file" id="sapFile" accept=".csv"></div>
     </div>
 
-    <div class="d-pad">
-        <div></div>
-        <button class="btn" onclick="move('up')">▲</button>
-        <div></div>
-        
-        <button class="btn" onclick="move('left')">◀</button>
-        <div class="info-display">
-            <div id="dispX">S: 0</div>
-            <div id="dispY">T: 0</div>
-        </div>
-        <button class="btn" onclick="move('right')">▶</button>
-        
-        <div></div>
-        <button class="btn" onclick="move('down')">▼</button>
-        <div></div>
-    </div>
+    <table id="resultTable" class="hidden">
+        <thead>
+            <tr>
+                <th>Material Nr.</th>
+                <th>Produkt</th>
+                <th>Bestand (SAP)</th>
+                <th>Verbrauch/Jahr</th>
+                <th>Lieferzeit (T)</th>
+                <th>Sicherheitsbest.</th>
+                <th>Meldebestand (ROP)</th>
+                <th>STATUS</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+</div>
 
-    <div id="status" class="status-msg">System Ready</div>
-    <button class="reset-btn" onclick="resetAll()">RESET TO DEFAULTS</button>
-    <p style="font-size: 0.7rem; color: #7f8c8d; margin-top: 10px;">Note: Changes apply to the next label in queue.</p>
+<div id="chartTooltip"><canvas id="forecastChart"></canvas></div>
+
+<div id="detailModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modalTitle">Lagerplatz-Details</h3>
+        <table style="width:100%; margin-top:15px;">
+            <thead><tr><th>Storage Bin</th><th>Batch</th><th>Menge</th></tr></thead>
+            <tbody id="modalBody"></tbody>
+        </table>
+    </div>
 </div>
 
 <script>
-    let shiftX = 0; // ^LS (Label Shift)
-    let topY = 0;   // ^LT (Label Top)
-    const step = 6; // ~0.5mm steps
-    const limit = 120; // Zebra hardware limit for LT
+    const DEFAULT_SAFETY_STOCK = 3000, DEFAULT_LEAD_TIME = 60, WARNING_BUFFER = 1.2;
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v8')) || [];
+    let stockSummary = {}, stockDetails = {}, myChart = null;
 
-    window.onload = () => {
-        const savedIp = localStorage.getItem('zebra_ip');
-        if (savedIp) document.getElementById('ipInput').value = savedIp;
-    };
+    if (masterData.length > 0) { document.getElementById('resultTable').classList.remove('hidden'); document.getElementById('exportBtn').classList.remove('hidden'); renderTable(); }
 
-    function saveConfig() {
-        localStorage.setItem('zebra_ip', document.getElementById('ipInput').value);
-        notify("IP Address Saved", "green");
-    }
-
-    function notify(text, color) {
-        const s = document.getElementById('status');
-        s.innerText = text;
-        s.style.color = color === "green" ? "#27ae60" : (color === "red" ? "#c0392b" : "#7f8c8d");
-    }
-
-    async function updatePrinter() {
-        const ip = document.getElementById('ipInput').value;
-        if (!ip) return;
-
-        // ^LT = Label Top (Vertical)
-        // ^LS = Label Shift (Horizontal)
-        const zpl = `^XA^LT${topY}^LS${shiftX}^XZ`;
-
-        try {
-            await fetch(`http://${ip}/pstprnt`, {
-                method: 'POST',
-                mode: 'no-cors',
-                body: zpl
-            });
-            notify(`Applied: V:${topY} H:${shiftX}`, "green");
-        } catch (e) {
-            notify("Connection Error", "red");
-        }
-    }
-
-    function move(dir) {
-        if (dir === 'up') topY -= step;
-        if (dir === 'down') topY += step;
-        if (dir === 'left') shiftX -= step;
-        if (dir === 'right') shiftX += step;
-
-        // Clamping values within hardware limits
-        topY = Math.max(-limit, Math.min(limit, topY));
-        shiftX = Math.max(-limit, Math.min(limit, shiftX));
-
-        document.getElementById('dispX').innerText = `S: ${shiftX}`;
-        document.getElementById('dispY').innerText = `T: ${topY}`;
-        updatePrinter();
-    }
-
-    function resetAll() {
-        if (confirm("Reset offsets?")) {
-            shiftX = 0; topY = 0;
-            document.getElementById('dispX').innerText = `S: 0`;
-            document.getElementById('dispY').innerText = `T: 0`;
-            updatePrinter();
-        }
-    }
-
-    window.addEventListener('keydown', (e) => {
-        if (!document.getElementById('kbToggle').checked) return;
-        if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) {
-            e.preventDefault();
-            if (e.code === "ArrowUp") move('up');
-            if (e.code === "ArrowDown") move('down');
-            if (e.code === "ArrowLeft") move('left');
-            if (e.code === "ArrowRight") move('right');
-        }
+    document.getElementById('masterFile').addEventListener('change', function(e) {
+        Papa.parse(e.target.files[0], { header: true, delimiter: ";", skipEmptyLines: true, complete: function(results) {
+            const grouped = {}; results.data.forEach(row => { const id = String(row['Material NO']||"").trim(); if (id) grouped[id] = row['Product']||"N/A"; });
+            masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
+            localStorage.setItem('sap_master_v8', JSON.stringify(masterData)); location.reload();
+        }});
     });
+
+    document.getElementById('sapFile').addEventListener('change', function(e) {
+        Papa.parse(e.target.files[0], { header: true, skipEmptyLines: true, complete: function(results) {
+            stockSummary = {}; stockDetails = {};
+            results.data.forEach(row => {
+                const id = String(row.Product || "").split('.')[0].trim();
+                const qty = parseFloat(row.Quantity) || 0;
+                if (id) {
+                    stockSummary[id] = (stockSummary[id] || 0) + qty;
+                    if (!stockDetails[id]) stockDetails[id] = [];
+                    stockDetails[id].push({ bin: row['Storage Bin'] || "N/A", batch: row['Batch'] || "N/A", qty: qty });
+                }
+            });
+            renderTable();
+        }});
+    });
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
+        let criticalCount = 0, warningCount = 0;
+
+        masterData.forEach(item => {
+            const stock = stockSummary[item.id] || 0;
+            const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
+            const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
+            const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
+            const rop = Math.ceil(((usage / 250) * lead) + safety);
+            
+            let statusText = "✅ OK", statusClass = "status-ok";
+            if (stock < rop) { statusText = "🚨 BESTELLEN"; statusClass = "status-order"; criticalCount++; }
+            else if (stock < (rop * WARNING_BUFFER)) { statusText = "⏳ WARNUNG"; statusClass = "status-warn"; warningCount++; }
+
+            const tr = document.createElement('tr');
+            tr.onclick = () => showDetails(item.id, item.name);
+            tr.innerHTML = `
+                <td class="mat-nr-cell" onmouseover="showChart(event, '${item.id}', '${item.name}', ${stock}, ${usage})" onmouseout="hideChart()">
+                    ${item.id}
+                </td>
+                <td>${item.name}</td>
+                <td style="font-weight:bold">${stock.toLocaleString()}</td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${usage}" onchange="save('${item.id}', 'u', this.value)"></td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${lead}" onchange="save('${item.id}', 'l', this.value)"></td>
+                <td onclick="event.stopPropagation()"><input type="number" value="${safety}" onchange="save('${item.id}', 's', this.value)"></td>
+                <td style="background:#f8f9fa">${rop.toLocaleString()}</td>
+                <td class="${statusClass}">${statusText}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        document.getElementById('totalItems').innerText = `Produkte: ${masterData.length}`;
+        document.getElementById('criticalItems').innerText = `🚨 Kritisch: ${criticalCount}`;
+        document.getElementById('warningItems').innerText = `⏳ Warnung: ${warningCount}`;
+    }
+
+    // Előrejelzés diagram logika
+    function showChart(e, id, name, stock, annualUsage) {
+        const tooltip = document.getElementById('chartTooltip');
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.pageX + 20) + 'px';
+        tooltip.style.top = (e.pageY - 100) + 'px';
+
+        const labels = ['Heute', '1 Mo', '2 Mo', '3 Mo', '4 Mo', '5 Mo', '6 Mo'];
+        const dailyUsage = annualUsage / 250;
+        const workDaysPerMonth = 21;
+        
+        const dataPoints = labels.map((_, i) => {
+            let val = stock - (dailyUsage * workDaysPerMonth * i);
+            return val < 0 ? 0 : Math.round(val);
+        });
+
+        if (myChart) myChart.destroy();
+        const ctx = document.getElementById('forecastChart').getContext('2d');
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Voraussichtlicher Bestand',
+                    data: dataPoints,
+                    borderColor: '#1F4E78',
+                    backgroundColor: 'rgba(31, 78, 120, 0.1)',
+                    fill: true, tension: 0.3, pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: true, text: '6-Monate Forecast', font: {size: 10} } },
+                scales: { y: { beginAtZero: true, ticks: { font: {size: 9} } }, x: { ticks: { font: {size: 9} } } }
+            }
+        });
+    }
+
+    function hideChart() { document.getElementById('chartTooltip').style.display = 'none'; }
+
+    function showDetails(id, name) {
+        const details = stockDetails[id] || [];
+        const modal = document.getElementById('detailModal');
+        document.getElementById('modalTitle').innerText = `Details: ${name}`;
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = details.length ? '' : '<tr><td colspan="3">Kein Bestand.</td></tr>';
+        details.sort((a,b) => b.qty - a.qty).forEach(d => {
+            modalBody.innerHTML += `<tr><td>${d.bin}</td><td>${d.batch}</td><td>${d.qty.toLocaleString()}</td></tr>`;
+        });
+        modal.style.display = "block";
+    }
+
+    function closeModal() { document.getElementById('detailModal').style.display = "none"; }
+    window.onclick = (e) => { if (e.target.className === 'modal') closeModal(); }
+    function save(id, key, val) { localStorage.setItem(`${key}_${id}`, val); renderTable(); }
+
+    function exportToExcel() {
+        const list = masterData.map(item => {
+            const stock = stockSummary[item.id] || 0;
+            const usage = parseFloat(localStorage.getItem(`u_${item.id}`)) || 0;
+            const lead = parseFloat(localStorage.getItem(`l_${item.id}`)) || DEFAULT_LEAD_TIME;
+            const safety = parseFloat(localStorage.getItem(`s_${item.id}`)) || DEFAULT_SAFETY_STOCK;
+            const rop = Math.ceil(((usage / 250) * lead) + safety);
+            return { id: item.id, name: item.name, stock, rop, isLow: stock < rop };
+        }).filter(r => r.isLow);
+        if (!list.length) return alert("Nichts zu bestellen!");
+        const ws = XLSX.utils.json_to_sheet(list.map(r => ({ "ID": r.id, "Produkt": r.name, "Bestand": r.stock, "Bedarf": r.rop - r.stock })));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Bestellliste");
+        XLSX.writeFile(wb, `Bestellliste_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
 </script>
 </body>
 </html>
