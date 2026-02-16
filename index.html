@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Bestandsmonitor v10 - Fix Source</title>
+    <title>SAP Bestandsmonitor v11 - Multi-Language</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -65,7 +65,7 @@
 
 <div class="card">
     <h2>
-        <span>📦 SAP Bestandsmonitor v10 <small>(Fix)</small></span>
+        <span>📦 SAP Bestandsmonitor v11 <small>(DE/EN Support)</small></span>
         <div class="header-buttons">
             <button id="resetBtn" class="btn btn-reset" onclick="resetData()">🗑️ Reset Daten</button>
             <button id="exportBtn" class="btn btn-export hidden" onclick="exportToExcel()">📥 Bestellliste</button>
@@ -86,7 +86,7 @@
         </div>
         <div class="upload-box">
             <strong>2. SAP Lagerbestand (Export)</strong><br>
-            <small>Format: .xlsx / .csv</small><br>
+            <small>Format: .xlsx / .csv (DE oder EN)</small><br>
             <input type="file" id="sapFile" accept=".csv, .xlsx, .xls">
         </div>
     </div>
@@ -115,7 +115,7 @@
         <span class="close" onclick="closeModal()">&times;</span>
         <h3 id="modalTitle">Lagerplatz-Details</h3>
         <table style="width:100%; margin-top:15px;">
-            <thead><tr><th>Storage Bin</th><th>Batch</th><th>Menge</th></tr></thead>
+            <thead><tr><th>Storage Bin / Lagerplatz</th><th>Batch / Charge</th><th>Menge</th></tr></thead>
             <tbody id="modalBody"></tbody>
         </table>
     </div>
@@ -123,7 +123,7 @@
 
 <script>
     const DEFAULT_SAFETY_STOCK = 3000, DEFAULT_LEAD_TIME = 60, WARNING_BUFFER = 1.2;
-    let masterData = JSON.parse(localStorage.getItem('sap_master_v10')) || [];
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v11')) || [];
     let stockSummary = {}, stockDetails = {}, myChart = null;
 
     if (masterData.length > 0) { 
@@ -137,7 +137,6 @@
         if (!file) return;
         const fileName = file.name.toLowerCase();
         
-        // Excel (.xlsx, .xls) kezelés
         if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -145,17 +144,13 @@
                 const workbook = XLSX.read(data, { type: 'array' });
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
-                
-                // HA isHeaderless = true, akkor tömbök tömbjét kérünk vissza (A, B oszlop fixen)
-                // HA false, akkor objektumokat (fejléc alapján)
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: isHeaderless ? 1 : undefined });
                 callback(jsonData);
             };
             reader.readAsArrayBuffer(file);
         } else {
-            // CSV kezelés
             Papa.parse(file, { 
-                header: !isHeaderless, // Ha nincs fejléc, akkor index alapján olvasunk
+                header: !isHeaderless, 
                 skipEmptyLines: true, 
                 complete: function(results) {
                     callback(results.data);
@@ -164,69 +159,63 @@
         }
     }
 
-    // --- 1. STAMMDATEN (Source) - Fejléc nélküli mód ---
+    // --- 1. STAMMDATEN (Source) - Header nélkül maradt ---
     document.getElementById('masterFile').addEventListener('change', function(e) {
-        // Itt "true"-t adunk át, mert a Source fájlodnak nincs fejléce
         parseFile(e.target.files[0], true, function(data) {
-            console.log("Master Data Raw:", data); // Debug
-            
             const grouped = {};
-            
             data.forEach(row => {
-                // Mivel nincs fejléc, indexeket használunk: 
-                // row[0] = A oszlop (ID), row[1] = B oszlop (Név)
-                // Ellenőrzés: ha a sor tömb (Excel) vagy objektum (CSV header nélkül)
-                
                 let id, name;
                 if (Array.isArray(row)) {
-                    // Excel / CSV header nélkül tömbként jön
                     id = row[0];
                     name = row[1];
                 } else {
-                    // Biztonsági tartalék (ha mégis objektum lenne)
                     const keys = Object.keys(row);
                     id = row[keys[0]];
                     name = row[keys[1]];
                 }
-
                 id = String(id || "").trim();
                 name = String(name || "N/A").trim();
 
-                // Csak akkor adjuk hozzá, ha van érvényes ID (és nem üres sor)
-                if (id && id.length > 3) { // Egyszerű szűrés, hogy a szemetet kihagyjuk
-                    grouped[id] = name;
-                }
+                if (id && id.length > 3) grouped[id] = name;
             });
 
             masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
             
             if(masterData.length === 0) {
-                alert("Hiba: Nem találtam adatokat a fájlban. Kérlek ellenőrizd, hogy az A oszlopban a kódok, a B-ben a nevek vannak-e.");
+                alert("Hiba: Üres vagy hibás Stammdaten fájl.");
                 return;
             }
 
-            localStorage.setItem('sap_master_v10', JSON.stringify(masterData)); 
-            alert(`Sikeres import! ${masterData.length} termék betöltve.`);
+            localStorage.setItem('sap_master_v11', JSON.stringify(masterData)); 
+            alert(`Stammdaten importálva: ${masterData.length} tétel.`);
             location.reload();
         });
     });
 
-    // --- 2. SAP EXPORT (Van fejléce) ---
+    // --- 2. SAP EXPORT (MULTI-LANGUAGE FIX) ---
     document.getElementById('sapFile').addEventListener('change', function(e) {
-        // Itt "false"-t adunk át, mert az SAP fájlnak VAN fejléce
         parseFile(e.target.files[0], false, function(data) {
-            console.log("SAP Data Raw:", data); // Debug
+            console.log("SAP Data Raw:", data);
 
             stockSummary = {}; 
             stockDetails = {};
             
             data.forEach(row => {
-                // Az SAP fájlban a 'Product' és 'Quantity' oszlopokat keressük
-                // A biztonság kedvéért kezeljük, ha kisbetűvel kezdődne, bár az SAP általában nagybetűs
-                const productRaw = row['Product'] || row['product']; 
-                const qtyRaw = row['Quantity'] || row['quantity'] || row['Unrestricted'] || 0; // Több lehetséges oszlopnév
+                // ITT VAN A LÉNYEG: Keresi az angol VAGY a német oszlopnevet
                 
-                const id = String(productRaw || "").split('.')[0].trim(); // Néha az SAP pontot tesz a végére, levágjuk
+                // 1. Cikkszám (Product / Produkt / Material)
+                const productRaw = row['Product'] || row['Produkt'] || row['Material'] || row['product'] || "";
+                
+                // 2. Mennyiség (Quantity / Menge / Unrestricted)
+                const qtyRaw = row['Quantity'] || row['Menge'] || row['Unrestricted'] || row['quantity'] || 0;
+                
+                // 3. Tárhely (Storage Bin / Lagerplatz)
+                const binRaw = row['Storage Bin'] || row['Lagerplatz'] || row['Storage bin'] || "N/A";
+                
+                // 4. Sarzs (Batch / Charge)
+                const batchRaw = row['Batch'] || row['Charge'] || row['batch'] || "N/A";
+
+                const id = String(productRaw).split('.')[0].trim();
                 const qty = parseFloat(qtyRaw) || 0;
                 
                 if (id) {
@@ -234,8 +223,8 @@
                     if (!stockDetails[id]) stockDetails[id] = [];
                     
                     stockDetails[id].push({ 
-                        bin: row['Storage Bin'] || row['Storage bin'] || "N/A", 
-                        batch: row['Batch'] || row['batch'] || "N/A", 
+                        bin: binRaw, 
+                        batch: batchRaw, 
                         qty: qty 
                     });
                 }
