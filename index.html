@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAP Bestandsmonitor v9 - XLSX Support</title>
+    <title>SAP Bestandsmonitor v10 - Fix Source</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -11,7 +11,6 @@
         body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f4f7f9; color: #333; }
         .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1400px; margin: auto; }
         
-        /* Fejléc elrendezés */
         h2 { 
             color: #1F4E78; 
             border-bottom: 3px solid #1F4E78; 
@@ -27,12 +26,10 @@
         .upload-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
         .upload-box { border: 2px dashed #1F4E78; padding: 15px; border-radius: 10px; text-align: center; background: #fff; }
         
-        /* Gombok */
         .btn { border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 0.9rem; }
-        .btn-export { background-color: #28a745; color: white; } /* Zöld az exporthoz */
+        .btn-export { background-color: #28a745; color: white; }
         .btn-export:hover { background-color: #218838; }
-        
-        .btn-reset { background-color: #dc3545; color: white; } /* Piros a törléshez */
+        .btn-reset { background-color: #dc3545; color: white; }
         .btn-reset:hover { background-color: #a71d2a; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
@@ -48,7 +45,6 @@
         .status-warn { color: #856404; font-weight: bold; background: #fff3cd; text-align: center; border-radius: 4px; }
         .status-order { color: #721c24; font-weight: bold; background: #f8d7da; text-align: center; animation: blink 2s infinite; border-radius: 4px; }
         
-        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.8;} 100% {opacity: 1;} }
         input[type="number"] { width: 85px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
 
         #chartTooltip {
@@ -69,7 +65,7 @@
 
 <div class="card">
     <h2>
-        <span>📦 SAP Bestandsmonitor v9 <small>(XLSX Support)</small></span>
+        <span>📦 SAP Bestandsmonitor v10 <small>(Fix)</small></span>
         <div class="header-buttons">
             <button id="resetBtn" class="btn btn-reset" onclick="resetData()">🗑️ Reset Daten</button>
             <button id="exportBtn" class="btn btn-export hidden" onclick="exportToExcel()">📥 Bestellliste</button>
@@ -83,8 +79,16 @@
     </div>
 
     <div class="upload-section">
-        <div class="upload-box"><strong>1. Stammdaten</strong><br><input type="file" id="masterFile" accept=".csv, .xlsx, .xls"></div>
-        <div class="upload-box"><strong>2. SAP Lagerbestand</strong><br><input type="file" id="sapFile" accept=".csv, .xlsx, .xls"></div>
+        <div class="upload-box">
+            <strong>1. Stammdaten (Source)</strong><br>
+            <small>Format: .xlsx / .csv (Kein Header nötig)</small><br>
+            <input type="file" id="masterFile" accept=".csv, .xlsx, .xls">
+        </div>
+        <div class="upload-box">
+            <strong>2. SAP Lagerbestand (Export)</strong><br>
+            <small>Format: .xlsx / .csv</small><br>
+            <input type="file" id="sapFile" accept=".csv, .xlsx, .xls">
+        </div>
     </div>
 
     <table id="resultTable" class="hidden">
@@ -119,39 +123,39 @@
 
 <script>
     const DEFAULT_SAFETY_STOCK = 3000, DEFAULT_LEAD_TIME = 60, WARNING_BUFFER = 1.2;
-    let masterData = JSON.parse(localStorage.getItem('sap_master_v8')) || [];
+    let masterData = JSON.parse(localStorage.getItem('sap_master_v10')) || [];
     let stockSummary = {}, stockDetails = {}, myChart = null;
 
-    // Inicializálás meglévő adatokkal
     if (masterData.length > 0) { 
         document.getElementById('resultTable').classList.remove('hidden'); 
         document.getElementById('exportBtn').classList.remove('hidden'); 
         renderTable(); 
     }
 
-    // --- 1. UNIVERZÁLIS FÁJLOLVASÓ FÜGGVÉNY (CSV és XLSX) ---
-    function parseFile(file, callback) {
+    // --- Segédfüggvény: Fájl beolvasása ---
+    function parseFile(file, isHeaderless, callback) {
         if (!file) return;
         const fileName = file.name.toLowerCase();
-
+        
+        // Excel (.xlsx, .xls) kezelés
         if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-            // Excel olvasás
             const reader = new FileReader();
             reader.onload = function(e) {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
-                // JSON konverzió (Array of Objects)
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                
+                // HA isHeaderless = true, akkor tömbök tömbjét kérünk vissza (A, B oszlop fixen)
+                // HA false, akkor objektumokat (fejléc alapján)
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: isHeaderless ? 1 : undefined });
                 callback(jsonData);
             };
             reader.readAsArrayBuffer(file);
         } else {
-            // CSV olvasás (Hagyományos PapaParse)
+            // CSV kezelés
             Papa.parse(file, { 
-                header: true, 
-                delimiter: ";", // Automatikus detektálás helyett jobb, ha fix, de kivehető ha változó
+                header: !isHeaderless, // Ha nincs fejléc, akkor index alapján olvasunk
                 skipEmptyLines: true, 
                 complete: function(results) {
                     callback(results.data);
@@ -160,56 +164,100 @@
         }
     }
 
-    // --- 2. STAMMDATEN BETÖLTÉS (MÓDOSÍTVA) ---
+    // --- 1. STAMMDATEN (Source) - Fejléc nélküli mód ---
     document.getElementById('masterFile').addEventListener('change', function(e) {
-        parseFile(e.target.files[0], function(data) {
-            const grouped = {}; 
-            data.forEach(row => { 
-                // Kulcsok normalizálása (Excel vs CSV eltérhet, trimelés fontos)
-                const id = String(row['Material NO'] || row['Material No'] || "").trim(); 
-                const product = row['Product'] || "N/A";
-                if (id) grouped[id] = product; 
+        // Itt "true"-t adunk át, mert a Source fájlodnak nincs fejléce
+        parseFile(e.target.files[0], true, function(data) {
+            console.log("Master Data Raw:", data); // Debug
+            
+            const grouped = {};
+            
+            data.forEach(row => {
+                // Mivel nincs fejléc, indexeket használunk: 
+                // row[0] = A oszlop (ID), row[1] = B oszlop (Név)
+                // Ellenőrzés: ha a sor tömb (Excel) vagy objektum (CSV header nélkül)
+                
+                let id, name;
+                if (Array.isArray(row)) {
+                    // Excel / CSV header nélkül tömbként jön
+                    id = row[0];
+                    name = row[1];
+                } else {
+                    // Biztonsági tartalék (ha mégis objektum lenne)
+                    const keys = Object.keys(row);
+                    id = row[keys[0]];
+                    name = row[keys[1]];
+                }
+
+                id = String(id || "").trim();
+                name = String(name || "N/A").trim();
+
+                // Csak akkor adjuk hozzá, ha van érvényes ID (és nem üres sor)
+                if (id && id.length > 3) { // Egyszerű szűrés, hogy a szemetet kihagyjuk
+                    grouped[id] = name;
+                }
             });
+
             masterData = Object.keys(grouped).map(id => ({ id, name: grouped[id] }));
-            localStorage.setItem('sap_master_v8', JSON.stringify(masterData)); 
+            
+            if(masterData.length === 0) {
+                alert("Hiba: Nem találtam adatokat a fájlban. Kérlek ellenőrizd, hogy az A oszlopban a kódok, a B-ben a nevek vannak-e.");
+                return;
+            }
+
+            localStorage.setItem('sap_master_v10', JSON.stringify(masterData)); 
+            alert(`Sikeres import! ${masterData.length} termék betöltve.`);
             location.reload();
         });
     });
 
-    // --- 3. SAP BESTAND BETÖLTÉS (MÓDOSÍTVA) ---
+    // --- 2. SAP EXPORT (Van fejléce) ---
     document.getElementById('sapFile').addEventListener('change', function(e) {
-        parseFile(e.target.files[0], function(data) {
+        // Itt "false"-t adunk át, mert az SAP fájlnak VAN fejléce
+        parseFile(e.target.files[0], false, function(data) {
+            console.log("SAP Data Raw:", data); // Debug
+
             stockSummary = {}; 
             stockDetails = {};
+            
             data.forEach(row => {
-                const id = String(row.Product || "").split('.')[0].trim();
-                const qty = parseFloat(row.Quantity) || 0;
+                // Az SAP fájlban a 'Product' és 'Quantity' oszlopokat keressük
+                // A biztonság kedvéért kezeljük, ha kisbetűvel kezdődne, bár az SAP általában nagybetűs
+                const productRaw = row['Product'] || row['product']; 
+                const qtyRaw = row['Quantity'] || row['quantity'] || row['Unrestricted'] || 0; // Több lehetséges oszlopnév
+                
+                const id = String(productRaw || "").split('.')[0].trim(); // Néha az SAP pontot tesz a végére, levágjuk
+                const qty = parseFloat(qtyRaw) || 0;
                 
                 if (id) {
                     stockSummary[id] = (stockSummary[id] || 0) + qty;
                     if (!stockDetails[id]) stockDetails[id] = [];
+                    
                     stockDetails[id].push({ 
-                        bin: row['Storage Bin'] || "N/A", 
-                        batch: row['Batch'] || "N/A", 
+                        bin: row['Storage Bin'] || row['Storage bin'] || "N/A", 
+                        batch: row['Batch'] || row['batch'] || "N/A", 
                         qty: qty 
                     });
                 }
             });
+            
             renderTable();
         });
     });
 
-    // --- 4. ÚJ: ADATTÖRLÉS FÜGGVÉNY ---
     function resetData() {
-        if (confirm("⚠️ Biztosan törölni akarod az ÖSSZES tárolt adatot? (Stammdaten + Beállítások)")) {
+        if (confirm("⚠️ Biztosan törölni akarod az ÖSSZES tárolt adatot?")) {
             localStorage.clear();
             location.reload();
         }
     }
 
-    // --- MEGLÉVŐ LOGIKA (Változatlan) ---
     function renderTable() {
-        const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
+        const tbody = document.getElementById('tableBody'); 
+        tbody.innerHTML = '';
+        
+        if (masterData.length === 0) return;
+
         let criticalCount = 0, warningCount = 0;
 
         masterData.forEach(item => {
@@ -239,6 +287,10 @@
             `;
             tbody.appendChild(tr);
         });
+        
+        document.getElementById('resultTable').classList.remove('hidden');
+        document.getElementById('exportBtn').classList.remove('hidden');
+        
         document.getElementById('totalItems').innerText = `Produkte: ${masterData.length}`;
         document.getElementById('criticalItems').innerText = `🚨 Kritisch: ${criticalCount}`;
         document.getElementById('warningItems').innerText = `⏳ Warnung: ${warningCount}`;
@@ -266,7 +318,7 @@
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Voraussichtlicher Bestand',
+                    label: 'Forecast',
                     data: dataPoints,
                     borderColor: '#1F4E78',
                     backgroundColor: 'rgba(31, 78, 120, 0.1)',
